@@ -203,6 +203,65 @@ function proteinEmoji(protein) {
   return "\uD83E\uDD69"; // default meat
 }
 
+// Extract the numeric lbs (or egg count) from protein string like "3 lbs chicken" or "12 eggs"
+function getProteinBase(protein) {
+  const m = protein.match(/([\d.]+)\s*(lbs?|eggs?)/i);
+  if (m) return { amount: parseFloat(m[1]), unit: m[2].toLowerCase().replace(/s$/, "") };
+  return { amount: 3, unit: "lb" };
+}
+
+// Default portion options (lbs or eggs)
+function portionOptions(protein) {
+  const { unit } = getProteinBase(protein);
+  if (unit === "egg") return [6, 8, 10, 12, 14, 16, 18, 20];
+  return [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+}
+
+// Scale an ingredient qty string by a factor. Handles fractions, ranges, and text like "small bunch".
+function scaleQty(qty, factor) {
+  if (factor === 1) return qty;
+  if (!qty || typeof qty !== "string") return qty;
+
+  // Don't scale "to taste", "small bunch", etc.
+  if (/^(to taste|small bunch|pinch|small|large)/i.test(qty.trim())) return qty;
+
+  // Handle fractions like "1/2", "1 1/2"
+  function parseNum(str) {
+    str = str.trim();
+    const mixed = str.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+    if (mixed) return parseInt(mixed[1]) + parseInt(mixed[2]) / parseInt(mixed[3]);
+    const frac = str.match(/^(\d+)\/(\d+)$/);
+    if (frac) return parseInt(frac[1]) / parseInt(frac[2]);
+    const n = parseFloat(str);
+    return isNaN(n) ? null : n;
+  }
+
+  function formatNum(n) {
+    if (n >= 1 && Math.abs(n - Math.round(n)) < 0.05) return String(Math.round(n));
+    // common fractions
+    const fracs = [[0.25,"1/4"],[0.33,"1/3"],[0.5,"1/2"],[0.67,"2/3"],[0.75,"3/4"]];
+    const whole = Math.floor(n);
+    const rem = n - whole;
+    for (const [val, str] of fracs) {
+      if (Math.abs(rem - val) < 0.06) return whole > 0 ? `${whole} ${str}` : str;
+    }
+    // round to 1 decimal
+    return (Math.round(n * 10) / 10).toString().replace(/\.0$/, "");
+  }
+
+  // Match leading number (possibly with fraction) at start
+  const m = qty.match(/^([\d./\s]+?)(\s|$)(.*)/);
+  if (!m) return qty;
+  const numPart = m[1].trim();
+  const rest = (m[3] || "").trim();
+  const parsed = parseNum(numPart);
+  if (parsed === null) return qty;
+
+  const scaled = parsed * factor;
+  const formatted = formatNum(scaled);
+  return rest ? `${formatted} ${rest}` : formatted;
+}
+
 // ============ MAIN COMPONENT ============
 export default function MealPlanner() {
   const [step, setStep] = useState(1);
@@ -211,6 +270,7 @@ export default function MealPlanner() {
   const [locked, setLocked] = useState(false);
   const [pantry, setPantry] = useState([]);
   const [checkedShop, setCheckedShop] = useState([]);
+  const [portions, setPortions] = useState({});
   const [viewMode, setViewMode] = useState("shop");
   const [openRecipe, setOpenRecipe] = useState(null);
   const [showImport, setShowImport] = useState(false);
@@ -220,7 +280,7 @@ export default function MealPlanner() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const R = useRef({ step: 1, week: [], selected: [], locked: false, pantry: [], checkedShop: [] });
+  const R = useRef({ step: 1, week: [], selected: [], locked: false, pantry: [], checkedShop: [], portions: {} });
   const loaded = useRef(false);
 
   // Load on mount
@@ -238,6 +298,7 @@ export default function MealPlanner() {
       setLocked(!!data.locked);
       setPantry(data.pantry || []);
       setCheckedShop(data.checkedShop || []);
+      setPortions(data.portions || {});
       loaded.current = true;
       return;
     }
@@ -256,6 +317,7 @@ export default function MealPlanner() {
               setLocked(!!d.locked);
               setPantry(d.pantry || []);
               setCheckedShop(d.checkedShop || []);
+              setPortions(d.portions || {});
               loaded.current = true;
               return;
             }
@@ -339,15 +401,23 @@ export default function MealPlanner() {
     persist();
   }
 
+  function setPortion(mealId, amount) {
+    const next = { ...R.current.portions, [mealId]: amount };
+    R.current.portions = next;
+    setPortions(next);
+    persist();
+  }
+
   function startNewWeek() {
     const fresh = pickDiverseWeek(R.current.week);
-    R.current = { step: 1, week: fresh, selected: [], locked: false, pantry: [], checkedShop: [] };
+    R.current = { step: 1, week: fresh, selected: [], locked: false, pantry: [], checkedShop: [], portions: {} };
     setStep(1);
     setWeek(fresh);
     setSelected([]);
     setLocked(false);
     setPantry([]);
     setCheckedShop([]);
+    setPortions({});
     setConfirmNew(false);
     setMenuOpen(false);
     persist();
@@ -373,8 +443,9 @@ export default function MealPlanner() {
       locked: R.current.locked,
       pantry: R.current.pantry,
       checkedShop: R.current.checkedShop,
+      portions: R.current.portions || {},
       _ts: Date.now(),
-      _v: 3,
+      _v: 4,
     };
     return JSON.stringify(data);
   }
@@ -412,6 +483,7 @@ export default function MealPlanner() {
         locked: !!d.locked,
         pantry: d.pantry || [],
         checkedShop: d.checkedShop || [],
+        portions: d.portions || {},
       };
       setStep(R.current.step);
       setWeek(R.current.week);
@@ -419,6 +491,7 @@ export default function MealPlanner() {
       setLocked(R.current.locked);
       setPantry(R.current.pantry);
       setCheckedShop(R.current.checkedShop);
+      setPortions(R.current.portions);
       persist();
       showToast("Restored!");
       setShowImport(false);
@@ -432,15 +505,25 @@ export default function MealPlanner() {
   const weekMeals = week.map(id => MEALS.find(m => m.id === id)).filter(Boolean);
   const selectedMeals = selected.map(id => MEALS.find(m => m.id === id)).filter(Boolean);
 
-  // Shopping list aggregation
+  // Get scaling factor for a meal based on user's portion selection
+  function factorFor(meal) {
+    const base = getProteinBase(meal.protein);
+    const defaultAmount = base.unit === "egg" ? base.amount : 3; // default 3 lbs for meat, or meal's egg count
+    const chosen = portions[meal.id] !== undefined ? portions[meal.id] : defaultAmount;
+    return chosen / base.amount;
+  }
+
+  // Shopping list aggregation (with scaling)
   const shoppingMap = {};
   selectedMeals.forEach(meal => {
+    const factor = factorFor(meal);
     meal.ingredients.forEach(ing => {
       const key = ing.item;
+      const scaledQty = scaleQty(ing.qty, factor);
       if (!shoppingMap[key]) {
-        shoppingMap[key] = { item: ing.item, qtys: [ing.qty], aisle: ing.aisle, mealCount: 1 };
+        shoppingMap[key] = { item: ing.item, qtys: [scaledQty], aisle: ing.aisle, mealCount: 1 };
       } else {
-        shoppingMap[key].qtys.push(ing.qty);
+        shoppingMap[key].qtys.push(scaledQty);
         shoppingMap[key].mealCount += 1;
       }
     });
@@ -452,13 +535,11 @@ export default function MealPlanner() {
     byAisle[x.aisle].push(x);
   });
 
-  // All ingredients for pantry step
+  // All ingredients for pantry step (with scaled qtys, before pantry filter)
   const allIngredients = {};
-  selectedMeals.forEach(meal => {
-    meal.ingredients.forEach(ing => {
-      if (!allIngredients[ing.aisle]) allIngredients[ing.aisle] = new Set();
-      allIngredients[ing.aisle].add(ing.item);
-    });
+  Object.values(shoppingMap).forEach(x => {
+    if (!allIngredients[x.aisle]) allIngredients[x.aisle] = [];
+    allIngredients[x.aisle].push(x);
   });
 
   // ============ STYLES ============
@@ -467,7 +548,7 @@ export default function MealPlanner() {
     header: { background: "linear-gradient(135deg,#2d6a4f 0%,#40916c 50%,#52b788 100%)", color: "white", padding: "20px 16px 24px", position: "relative" },
     headerTitle: { fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: "-0.3px" },
     headerSub: { fontSize: 13, opacity: 0.9, marginTop: 4 },
-    syncBtn: { position: "absolute", top: 16, right: 12, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.35)", color: "white", padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" },
+    syncBtn: { background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.35)", color: "white", padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" },
     progress: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "16px 0 0", background: "white" },
     dot: (active, done) => ({ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, background: done ? "#2d6a4f" : active ? "#2d6a4f" : "#e5e5e0", color: done || active ? "white" : "#888", transition: "all 0.25s" }),
     line: (done) => ({ width: 32, height: 2, background: done ? "#2d6a4f" : "#e5e5e0" }),
@@ -525,12 +606,13 @@ export default function MealPlanner() {
         <h1 style={s.headerTitle}>Weekly Meals</h1>
         <div style={s.headerSub}>
           {step === 1 && "Pick your meals"}
-          {step === 2 && "What's in your pantry?"}
-          {step === 3 && "Shop & cook"}
+          {step === 2 && "Set portion sizes"}
+          {step === 3 && "What's in your pantry?"}
+          {step === 4 && "Shop & cook"}
         </div>
-        <div style={{ position: "absolute", top: 16, right: 12, display: "flex", gap: 8 }}>
+        <div style={{ position: "absolute", top: 16, right: 12, display: "flex", gap: 8, alignItems: "center" }}>
           <button style={s.syncBtn} onClick={() => setShowImport(true)}>{E.cloud} Sync</button>
-          <button style={{ ...s.syncBtn, position: "static", padding: "6px 10px", fontSize: 18, lineHeight: 1 }} onClick={() => setMenuOpen(true)}>⋯</button>
+          <button style={{ ...s.syncBtn, padding: "4px 10px", fontSize: 18, lineHeight: 1 }} onClick={() => setMenuOpen(true)}>⋯</button>
         </div>
       </div>
 
@@ -540,7 +622,9 @@ export default function MealPlanner() {
         <div style={s.line(step > 1)}></div>
         <div style={s.dot(step === 2, step > 2)}>2</div>
         <div style={s.line(step > 2)}></div>
-        <div style={s.dot(step === 3, false)}>3</div>
+        <div style={s.dot(step === 3, step > 3)}>3</div>
+        <div style={s.line(step > 3)}></div>
+        <div style={s.dot(step === 4, false)}>4</div>
       </div>
 
       <div style={s.container}>
@@ -564,7 +648,7 @@ export default function MealPlanner() {
                       <div style={s.mealName}>{meal.name}</div>
                       <div style={s.mealMeta}>
                         <span>{E.clock} {meal.time}</span>
-                        <span>{proteinEmoji(meal.protein)} {meal.protein}</span>
+                        <span>{proteinEmoji(meal.protein)} {meal.protein.replace(/^[\d.]+\s*(lbs?|eggs?)\s*/i, "")}</span>
                       </div>
                       <div style={s.tags}>{meal.tags.map(t => <span key={t} style={s.tag}>{t}</span>)}</div>
                     </div>
@@ -575,23 +659,64 @@ export default function MealPlanner() {
           </>
         )}
 
-        {/* STEP 2 */}
+        {/* STEP 2 - PORTIONS */}
         {step === 2 && (
+          <>
+            <div style={s.sectionTitle}>How much protein per meal?</div>
+            <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>All ingredients scale to match.</div>
+            {selectedMeals.map(meal => {
+              const base = getProteinBase(meal.protein);
+              const defaultAmount = base.unit === "egg" ? base.amount : 3;
+              const current = portions[meal.id] !== undefined ? portions[meal.id] : defaultAmount;
+              const options = portionOptions(meal.protein);
+              const proteinName = meal.protein.replace(/^[\d.]+\s*(lbs?|eggs?)\s*/i, "").trim();
+              const unitLabel = base.unit === "egg" ? "" : "lbs";
+              return (
+                <div key={meal.id} style={{ ...s.card(false, false), cursor: "default" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 24 }}>
+                      {meal.emoji}
+                      {meal.tags.includes("quick") && <span style={{ fontSize: 14, marginLeft: 2 }}>{"\u26A1"}</span>}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1a1a", lineHeight: 1.3 }}>{meal.name}</div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{proteinEmoji(meal.protein)} {proteinName}</div>
+                    </div>
+                    <select
+                      value={current}
+                      onChange={e => setPortion(meal.id, parseFloat(e.target.value))}
+                      style={{ fontSize: 14, fontWeight: 700, padding: "8px 10px", border: "2px solid #2d6a4f", borderRadius: 8, background: "white", color: "#2d6a4f", cursor: "pointer", appearance: "auto" }}
+                    >
+                      {options.map(o => <option key={o} value={o}>{o} {unitLabel}</option>)}
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        {/* STEP 3 - PANTRY */}
+        {step === 3 && (
           <>
             <div style={s.sectionTitle}>Tap anything you already have</div>
             <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>It'll be skipped on your shopping list.</div>
             {AISLE_ORDER.map(aisle => {
               const items = allIngredients[aisle];
-              if (!items || items.size === 0) return null;
+              if (!items || items.length === 0) return null;
               return (
                 <div key={aisle}>
                   <div style={s.aisleHeader}><span>{AISLE_EMOJI[aisle]}</span>{aisle}</div>
-                  {[...items].sort().map(item => {
-                    const have = pantry.includes(item);
+                  {items.sort((a,b) => a.item.localeCompare(b.item)).map(x => {
+                    const have = pantry.includes(x.item);
                     return (
-                      <div key={item} style={s.shopRow(have)} onClick={() => togglePantry(item)}>
+                      <div key={x.item} style={s.shopRow(have)} onClick={() => togglePantry(x.item)}>
                         <div style={s.checkbox(have)}>{have ? "\u2713" : ""}</div>
-                        <div style={s.shopItem}>{item}</div>
+                        <div style={s.shopItem}>
+                          <div style={{ fontWeight: 600 }}>{x.item}</div>
+                          <div style={s.qty}>{x.qtys.join(" + ")}</div>
+                        </div>
+                        {x.mealCount > 1 && <span style={s.badge}>x{x.mealCount} meals</span>}
                       </div>
                     );
                   })}
@@ -601,8 +726,8 @@ export default function MealPlanner() {
           </>
         )}
 
-        {/* STEP 3 */}
-        {step === 3 && viewMode === "shop" && (
+        {/* STEP 4 - SHOPPING + RECIPES */}
+        {step === 4 && viewMode === "shop" && (
           <>
             <div style={s.sectionTitle}>Shopping list</div>
             <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>Tap to check off as you shop.</div>
@@ -631,7 +756,7 @@ export default function MealPlanner() {
           </>
         )}
 
-        {step === 3 && viewMode === "recipes" && (
+        {step === 4 && viewMode === "recipes" && (
           <>
             <div style={s.sectionTitle}>Your recipes</div>
             {selectedMeals.map(meal => {
@@ -653,7 +778,7 @@ export default function MealPlanner() {
                     <div style={s.recipeBody}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#2d6a4f", marginTop: 10, marginBottom: 6 }}>INGREDIENTS</div>
                       {meal.ingredients.map((ing, i) => (
-                        <div key={i} style={{ fontSize: 13, padding: "3px 0", color: "#333" }}>{E.bullet} {ing.qty} {ing.item}</div>
+                        <div key={i} style={{ fontSize: 13, padding: "3px 0", color: "#333" }}>{E.bullet} {scaleQty(ing.qty, factorFor(meal))} {ing.item}</div>
                       ))}
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#b45309", marginTop: 14, marginBottom: 6 }}>STEPS</div>
                       {meal.steps.map((step, i) => (
@@ -697,6 +822,12 @@ export default function MealPlanner() {
           </>
         )}
         {step === 3 && (
+          <>
+            <button style={s.btn("secondary")} onClick={() => goToStep(2)}>{E.arrL} Back</button>
+            <button style={s.btn("primary")} onClick={() => goToStep(4)}>Next {E.arrR}</button>
+          </>
+        )}
+        {step === 4 && (
           <>
             <button style={s.btn(viewMode === "shop" ? "primary" : "secondary")} onClick={() => setViewMode("shop")}>{E.list} List</button>
             <button style={s.btn(viewMode === "recipes" ? "amber" : "secondary")} onClick={() => setViewMode("recipes")}>{E.chef} Recipes</button>
