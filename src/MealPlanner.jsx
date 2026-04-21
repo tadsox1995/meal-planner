@@ -125,45 +125,70 @@ const MEAL_META = {
 };
 
 // ============ DIVERSITY PICKER ============
+// Cuisine tags we want to keep varied (not stack multiple Italian, Mexican, etc.)
+const CUISINE_TAGS = ["italian","mexican","asian","korean","japanese","chinese","thai","indian","greek","french","middle-eastern","cajun"];
+
+function cuisineOf(meal) {
+  return meal.tags.find(t => CUISINE_TAGS.includes(t)) || null;
+}
+
+function tryPick(meal, picked, counts, caps) {
+  const meta = MEAL_META[meal.id];
+  if (caps.cat      && (counts.cat[meta.cat]         || 0) >= caps.cat)      return false;
+  if (caps.type     && (counts.type[meta.type]       || 0) >= caps.type)     return false;
+  if (caps.protein  && (counts.protein[meta.protein] || 0) >= caps.protein)  return false;
+  if (caps.carb     && (counts.carb[meta.carb]       || 0) >= caps.carb)     return false;
+  const cuisine = cuisineOf(meal);
+  if (cuisine && caps.cuisine && (counts.cuisine[cuisine] || 0) >= caps.cuisine) return false;
+  picked.push(meal);
+  counts.cat[meta.cat]         = (counts.cat[meta.cat]         || 0) + 1;
+  counts.type[meta.type]       = (counts.type[meta.type]       || 0) + 1;
+  counts.protein[meta.protein] = (counts.protein[meta.protein] || 0) + 1;
+  counts.carb[meta.carb]       = (counts.carb[meta.carb]       || 0) + 1;
+  if (cuisine) counts.cuisine[cuisine] = (counts.cuisine[cuisine] || 0) + 1;
+  return true;
+}
+
 function pickDiverseWeek(excludeIds = []) {
   const pool = MEALS.filter(m => !excludeIds.includes(m.id));
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const picked = [];
-  const counts = { cat: {}, type: {}, protein: {}, carb: {} };
+  const counts = { cat: {}, type: {}, protein: {}, carb: {}, cuisine: {} };
 
-  // Pass 1: strict (tighter for larger pool of 100)
+  // Step 1: Guarantee at least ONE quick meal (tag: "quick")
+  const quicks = shuffled.filter(m => m.tags.includes("quick"));
+  for (const m of quicks) {
+    if (tryPick(m, picked, counts, { cat: 2, type: 1, protein: 4, carb: 3, cuisine: 2 })) break;
+  }
+
+  // Step 2: Strict pass — diverse cats, proteins, carbs, cuisines
   for (const m of shuffled) {
     if (picked.length >= 10) break;
-    const meta = MEAL_META[m.id];
-    if ((counts.cat[meta.cat] || 0) >= 2) continue;
-    if ((counts.type[meta.type] || 0) >= 1) continue;
-    if ((counts.protein[meta.protein] || 0) >= 4) continue;
-    if ((counts.carb[meta.carb] || 0) >= 3) continue;
+    if (picked.find(p => p.id === m.id)) continue;
+    tryPick(m, picked, counts, { cat: 2, type: 1, protein: 4, carb: 3, cuisine: 2 });
+  }
+
+  // Step 3: Relax cuisine + cat caps if still short
+  for (const m of shuffled) {
+    if (picked.length >= 10) break;
+    if (picked.find(p => p.id === m.id)) continue;
+    tryPick(m, picked, counts, { type: 1, protein: 5, carb: 4 });
+  }
+
+  // Step 4: Fill any remaining spots (just avoid exact type duplicates)
+  for (const m of shuffled) {
+    if (picked.length >= 10) break;
+    if (picked.find(p => p.id === m.id)) continue;
+    tryPick(m, picked, counts, { type: 1 });
+  }
+
+  // Step 5: Last resort — fill whatever
+  for (const m of shuffled) {
+    if (picked.length >= 10) break;
+    if (picked.find(p => p.id === m.id)) continue;
     picked.push(m);
-    counts.cat[meta.cat] = (counts.cat[meta.cat] || 0) + 1;
-    counts.type[meta.type] = (counts.type[meta.type] || 0) + 1;
-    counts.protein[meta.protein] = (counts.protein[meta.protein] || 0) + 1;
-    counts.carb[meta.carb] = (counts.carb[meta.carb] || 0) + 1;
   }
-  // Pass 2: relax
-  if (picked.length < 10) {
-    for (const m of shuffled) {
-      if (picked.length >= 10) break;
-      if (picked.find(p => p.id === m.id)) continue;
-      const meta = MEAL_META[m.id];
-      if ((counts.type[meta.type] || 0) >= 1) continue;
-      picked.push(m);
-      counts.type[meta.type] = (counts.type[meta.type] || 0) + 1;
-    }
-  }
-  // Pass 3: fill
-  if (picked.length < 10) {
-    for (const m of shuffled) {
-      if (picked.length >= 10) break;
-      if (picked.find(p => p.id === m.id)) continue;
-      picked.push(m);
-    }
-  }
+
   return picked.map(m => m.id);
 }
 
