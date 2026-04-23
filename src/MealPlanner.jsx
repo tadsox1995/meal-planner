@@ -675,6 +675,9 @@ export default function MealPlanner() {
   const [cameFromFinder, setCameFromFinder] = useState(false);
   const [babyMode, setBabyMode] = useState(true);
   const [defaultPortion, setDefaultPortion] = useState(6);
+  const [customItems, setCustomItems] = useState([]);
+  const [showCustomAdd, setShowCustomAdd] = useState(false);
+  const [customInput, setCustomInput] = useState("");
   const [cookMealId, setCookMealId] = useState(null);
   const [cookStep, setCookStep] = useState(0);
   const [cookTimer, setCookTimer] = useState(null); // { seconds: n, startedAt: ts }
@@ -726,10 +729,11 @@ export default function MealPlanner() {
       if (menuOpen) { setMenuOpen(false); return; }
       if (confirmNew) { setConfirmNew(false); return; }
       if (confirmReset) { setConfirmReset(false); return; }
+      if (showCustomAdd) { setShowCustomAdd(false); setCustomInput(""); return; }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cookMealId, browseDetail, browseOpen, finderOpen, showImport, menuOpen, confirmNew, confirmReset]);
+  }, [cookMealId, browseDetail, browseOpen, finderOpen, showImport, menuOpen, confirmNew, confirmReset, showCustomAdd]);
 
   // Migration: v6 and earlier stored portions in LBS; v7+ stores in SERVINGS.
   // Convert lbs -> servings (1 lb = ~2.67 servings at 6oz) for meats only.
@@ -788,6 +792,8 @@ export default function MealPlanner() {
       R.current.babyMode = data.babyMode !== undefined ? data.babyMode : true;
       setDefaultPortion(migrateDefault(data.defaultPortion, data._v));
       R.current.defaultPortion = migrateDefault(data.defaultPortion, data._v);
+      setCustomItems(data.customItems || []);
+      R.current.customItems = data.customItems || [];
       loaded.current = true;
       return;
     }
@@ -811,6 +817,8 @@ export default function MealPlanner() {
               R.current.babyMode = d.babyMode !== undefined ? d.babyMode : true;
               setDefaultPortion(migrateDefault(d.defaultPortion, d._v));
               R.current.defaultPortion = migrateDefault(d.defaultPortion, d._v);
+              setCustomItems(d.customItems || []);
+              R.current.customItems = d.customItems || [];
               loaded.current = true;
               return;
             }
@@ -958,6 +966,30 @@ export default function MealPlanner() {
     persist();
   }
 
+  function addCustomItem(text) {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return;
+    // Support multi-line: split on newlines and commas
+    const items = trimmed.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    const existing = R.current.customItems || [];
+    const next = [...existing];
+    items.forEach(it => {
+      if (!next.some(x => x.text.toLowerCase() === it.toLowerCase())) {
+        next.push({ text: it, id: Date.now() + Math.random() });
+      }
+    });
+    R.current.customItems = next;
+    setCustomItems(next);
+    persist();
+  }
+
+  function removeCustomItem(id) {
+    const next = (R.current.customItems || []).filter(x => x.id !== id);
+    R.current.customItems = next;
+    setCustomItems(next);
+    persist();
+  }
+
   function openCookMode(mealId) {
     setCookMealId(mealId);
     setCookStep(0);
@@ -981,7 +1013,11 @@ export default function MealPlanner() {
 
   function startNewWeek() {
     const fresh = pickDiverseWeek(R.current.week);
-    R.current = { step: 1, week: fresh, selected: [], locked: false, pantry: [], checkedShop: [], portions: {} };
+    // Preserve "settings" type values across weeks
+    const keepBaby = R.current.babyMode !== undefined ? R.current.babyMode : true;
+    const keepDefault = R.current.defaultPortion !== undefined ? R.current.defaultPortion : 6;
+    const keepCustom = R.current.customItems || [];
+    R.current = { step: 1, week: fresh, selected: [], locked: false, pantry: [], checkedShop: [], portions: {}, babyMode: keepBaby, defaultPortion: keepDefault, customItems: keepCustom };
     setStep(1);
     setWeek(fresh);
     setSelected([]);
@@ -1017,8 +1053,9 @@ export default function MealPlanner() {
       portions: R.current.portions || {},
       babyMode: R.current.babyMode !== undefined ? R.current.babyMode : true,
       defaultPortion: R.current.defaultPortion !== undefined ? R.current.defaultPortion : 6,
+      customItems: R.current.customItems || [],
       _ts: Date.now(),
-      _v: 7,
+      _v: 8,
     };
     return JSON.stringify(data);
   }
@@ -1059,6 +1096,7 @@ export default function MealPlanner() {
         portions: migratePortions(d.portions || {}, d._v),
         babyMode: d.babyMode !== undefined ? d.babyMode : true,
         defaultPortion: migrateDefault(d.defaultPortion, d._v),
+        customItems: d.customItems || [],
       };
       setStep(R.current.step);
       setWeek(R.current.week);
@@ -1069,6 +1107,7 @@ export default function MealPlanner() {
       setPortions(R.current.portions);
       setBabyMode(R.current.babyMode);
       setDefaultPortion(R.current.defaultPortion);
+      setCustomItems(R.current.customItems);
       persist();
       showToast("Restored!");
       setShowImport(false);
@@ -1411,6 +1450,66 @@ export default function MealPlanner() {
           <>
             <div style={s.sectionTitle}>Shopping list</div>
             <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>Tap to check off as you shop.</div>
+
+            {/* Add custom item button - top */}
+            {!showCustomAdd && (
+              <button
+                onClick={() => setShowCustomAdd(true)}
+                style={{ ...s.btn("secondary"), width: "100%", flex: "none", marginBottom: 14, borderStyle: "dashed", padding: "12px 20px" }}
+              >+ Add extras to your list</button>
+            )}
+
+            {showCustomAdd && (
+              <div style={{ marginBottom: 14, padding: 14, background: "white", border: "2px solid #2d6a4f", borderRadius: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#2d6a4f", marginBottom: 8 }}>Add to your list</div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>One per line, or separate with commas</div>
+                <textarea
+                  value={customInput}
+                  onChange={e => setCustomInput(e.target.value)}
+                  placeholder={"Paper towels\nMilk\nDish soap"}
+                  rows={4}
+                  autoFocus
+                  style={{ width: "100%", padding: 10, fontSize: 14, border: "1px solid #ddd", borderRadius: 8, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button
+                    onClick={() => { setShowCustomAdd(false); setCustomInput(""); }}
+                    style={{ ...s.btn("ghost"), flex: 1 }}
+                  >Cancel</button>
+                  <button
+                    onClick={() => { addCustomItem(customInput); setCustomInput(""); setShowCustomAdd(false); }}
+                    disabled={!customInput.trim()}
+                    style={{ ...s.btn("primary"), flex: 1, opacity: customInput.trim() ? 1 : 0.5 }}
+                  >Add</button>
+                </div>
+              </div>
+            )}
+
+            {/* Custom items - shown near top since user added them */}
+            {customItems.length > 0 && (
+              <div>
+                <div style={s.aisleHeader}><span>{"\u2728"}</span>My Extras</div>
+                {customItems.map(x => {
+                  const key = "custom:" + x.id;
+                  const done = checkedShop.includes(key);
+                  return (
+                    <div key={x.id} style={s.shopRow(done)}>
+                      <div style={s.checkbox(done)} onClick={() => toggleShop(key)}>{done ? "\u2713" : ""}</div>
+                      <div style={s.shopItem} onClick={() => toggleShop(key)}>
+                        <div style={{ fontWeight: 600 }}>{x.text}</div>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeCustomItem(x.id); }}
+                        style={{ background: "transparent", border: "none", color: "#b45309", fontSize: 20, cursor: "pointer", padding: "4px 10px", fontWeight: 700, minWidth: 36 }}
+                        title="Remove"
+                      >{"\u00D7"}</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Recipe-driven aisles */}
             {AISLE_ORDER.map(aisle => {
               const items = byAisle[aisle];
               if (!items || items.length === 0) return null;
