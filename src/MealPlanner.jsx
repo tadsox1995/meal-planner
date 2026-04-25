@@ -1535,6 +1535,16 @@ export default function MealPlanner() {
           </>
         )}
 
+        {step === 4 && viewMode === "shop" && (
+          <button
+            onClick={() => setConfirmNew(true)}
+            style={{ ...s.btn("ghost"), width: "100%", flex: "none", marginTop: 30, marginBottom: 8, padding: "14px 20px", borderColor: "#b45309", color: "#b45309" }}
+          >{"\uD83D\uDD04"} Start New Week</button>
+        )}
+        {step === 4 && viewMode === "shop" && (
+          <div style={{ fontSize: 11, color: "#888", textAlign: "center", marginBottom: 8 }}>Done shopping? Reset and pick next week's meals.</div>
+        )}
+
         {step === 4 && viewMode === "recipes" && (
           <>
             <div style={s.sectionTitle}>Your recipes</div>
