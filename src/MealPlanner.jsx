@@ -678,6 +678,7 @@ export default function MealPlanner() {
   const [customItems, setCustomItems] = useState([]);
   const [showCustomAdd, setShowCustomAdd] = useState(false);
   const [customInput, setCustomInput] = useState("");
+  const [haveAllForMeals, setHaveAllForMeals] = useState([]);
   const [cookMealId, setCookMealId] = useState(null);
   const [cookStep, setCookStep] = useState(0);
   const [cookTimers, setCookTimers] = useState([]); // array of { id, label, seconds, startedAt }
@@ -804,6 +805,8 @@ export default function MealPlanner() {
       R.current.browseOpen = !!data.browseOpen;
       setBrowseDetail(data.browseDetail !== undefined ? data.browseDetail : null);
       R.current.browseDetail = data.browseDetail !== undefined ? data.browseDetail : null;
+      setHaveAllForMeals(data.haveAllForMeals || []);
+      R.current.haveAllForMeals = data.haveAllForMeals || [];
       loaded.current = true;
       return;
     }
@@ -837,6 +840,8 @@ export default function MealPlanner() {
               R.current.browseOpen = !!d.browseOpen;
               setBrowseDetail(d.browseDetail !== undefined ? d.browseDetail : null);
               R.current.browseDetail = d.browseDetail !== undefined ? d.browseDetail : null;
+              setHaveAllForMeals(d.haveAllForMeals || []);
+              R.current.haveAllForMeals = d.haveAllForMeals || [];
               loaded.current = true;
               return;
             }
@@ -1032,6 +1037,14 @@ export default function MealPlanner() {
     persist();
   }
 
+  function toggleHaveAll(mealId) {
+    const cur = R.current.haveAllForMeals || [];
+    const next = cur.includes(mealId) ? cur.filter(id => id !== mealId) : [...cur, mealId];
+    R.current.haveAllForMeals = next;
+    setHaveAllForMeals(next);
+    persist();
+  }
+
   function openCookMode(mealId) {
     setCookMealId(mealId);
     setCookStep(0);
@@ -1063,7 +1076,7 @@ export default function MealPlanner() {
     const keepBaby = R.current.babyMode !== undefined ? R.current.babyMode : true;
     const keepDefault = R.current.defaultPortion !== undefined ? R.current.defaultPortion : 6;
     const keepCustom = R.current.customItems || [];
-    R.current = { step: 1, week: fresh, selected: [], locked: false, pantry: [], checkedShop: [], portions: {}, babyMode: keepBaby, defaultPortion: keepDefault, customItems: keepCustom, viewMode: "shop", openRecipe: null, browseOpen: false, browseDetail: null };
+    R.current = { step: 1, week: fresh, selected: [], locked: false, pantry: [], checkedShop: [], portions: {}, babyMode: keepBaby, defaultPortion: keepDefault, customItems: keepCustom, viewMode: "shop", openRecipe: null, browseOpen: false, browseDetail: null, haveAllForMeals: [] };
     setStep(1);
     setWeek(fresh);
     setSelected([]);
@@ -1073,6 +1086,7 @@ export default function MealPlanner() {
     setPortions({});
     setViewMode("shop");
     setOpenRecipe(null);
+    setHaveAllForMeals([]);
     setConfirmNew(false);
     setMenuOpen(false);
     persist();
@@ -1106,6 +1120,7 @@ export default function MealPlanner() {
       openRecipe: R.current.openRecipe !== undefined ? R.current.openRecipe : null,
       browseOpen: !!R.current.browseOpen,
       browseDetail: R.current.browseDetail !== undefined ? R.current.browseDetail : null,
+      haveAllForMeals: R.current.haveAllForMeals || [],
       _ts: Date.now(),
       _v: 9,
     };
@@ -1153,6 +1168,7 @@ export default function MealPlanner() {
         openRecipe: d.openRecipe !== undefined ? d.openRecipe : null,
         browseOpen: !!d.browseOpen,
         browseDetail: d.browseDetail !== undefined ? d.browseDetail : null,
+        haveAllForMeals: d.haveAllForMeals || [],
       };
       setStep(R.current.step);
       setWeek(R.current.week);
@@ -1168,6 +1184,7 @@ export default function MealPlanner() {
       setOpenRecipe(R.current.openRecipe);
       setBrowseOpen(R.current.browseOpen);
       setBrowseDetail(R.current.browseDetail);
+      setHaveAllForMeals(R.current.haveAllForMeals);
       persist();
       showToast("Restored!");
       setShowImport(false);
@@ -1341,6 +1358,7 @@ function combineQtys(qtys) {
 }
   const shoppingMap = {};
   selectedMeals.forEach(meal => {
+    if (haveAllForMeals.includes(meal.id)) return; // user already has everything for this meal
     const factor = factorFor(meal);
     meal.ingredients.forEach(ing => {
       const key = ing.item;
@@ -1463,6 +1481,7 @@ function combineQtys(qtys) {
             {weekMeals.map(meal => {
               const sel = selected.includes(meal.id);
               const dim = locked && !sel;
+              const haveAll = haveAllForMeals.includes(meal.id);
               return (
                 <div key={meal.id} style={s.card(sel, dim)} onClick={() => toggleSelect(meal.id)}>
                   <div style={s.cardRow}>
@@ -1480,6 +1499,12 @@ function combineQtys(qtys) {
                       <div style={s.tags}>{meal.tags.map(t => <span key={t} style={s.tag}>{t}</span>)}</div>
                     </div>
                   </div>
+                  {sel && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleHaveAll(meal.id); }}
+                      style={{ marginTop: 10, width: "100%", padding: "8px 12px", background: haveAll ? "#2d6a4f" : "transparent", border: haveAll ? "2px solid #2d6a4f" : "2px dashed #b8b8b3", color: haveAll ? "white" : "#666", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                    >{haveAll ? "\u2713 Already have ingredients" : "+ Already have ingredients"}</button>
+                  )}
                 </div>
               );
             })}
