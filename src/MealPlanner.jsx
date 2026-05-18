@@ -1641,7 +1641,7 @@ function combineQtys(qtys) {
           <button style={{ ...s.syncBtn, padding: "6px 9px", fontSize: 14 }} onClick={() => setFinderOpen(true)} title="What can I make?">{"\uD83E\uDD58"}</button>
           <button style={{ ...s.syncBtn, padding: "6px 9px", fontSize: 14 }} onClick={() => setBrowseOpenAndPersist(true)} title="Browse all meals">{"\uD83D\uDD0D"}</button>
           <button style={s.syncBtn} onClick={() => setShowImport(true)}>{E.cloud} Sync</button>
-          <button style={{ ...s.syncBtn, padding: "4px 10px", fontSize: 18, lineHeight: 1 }} onClick={() => setMenuOpen(true)}>⋯</button>
+          <button style={{ ...s.syncBtn, background: "rgba(180,83,9,0.25)", borderColor: "rgba(255,200,150,0.55)" }} onClick={() => setConfirmNew(true)} title="Start a fresh week">{"\uD83D\uDD04"} New</button>
         </div>
       </div>
 
@@ -1711,10 +1711,14 @@ function combineQtys(qtys) {
                       <div style={s.tags}>{meal.tags.map(t => <span key={t} style={s.tag}>{t}</span>)}</div>
                     </div>
                   </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setBrowseDetailAndPersist(meal.id); setBrowseOpenAndPersist(true); }}
+                    style={{ marginTop: 10, width: "100%", padding: "8px 12px", background: "transparent", border: "1px solid #ddd", color: "#555", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  >{"\uD83D\uDCD6"} View recipe</button>
                   {sel && (
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleHaveAll(meal.id); }}
-                      style={{ marginTop: 10, width: "100%", padding: "8px 12px", background: haveAll ? "#2d6a4f" : "transparent", border: haveAll ? "2px solid #2d6a4f" : "2px dashed #b8b8b3", color: haveAll ? "white" : "#666", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                      style={{ marginTop: 6, width: "100%", padding: "8px 12px", background: haveAll ? "#2d6a4f" : "transparent", border: haveAll ? "2px solid #2d6a4f" : "2px dashed #b8b8b3", color: haveAll ? "white" : "#666", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                     >{haveAll ? "\u2713 Already have ingredients" : "+ Already have ingredients"}</button>
                   )}
                 </div>
@@ -2226,28 +2230,15 @@ function combineQtys(qtys) {
               <button style={{ ...s.btn("amber"), width: "100%", flex: "none" }} onClick={restoreFromText}>Restore</button>
             </div>
 
+            <button
+              onClick={() => { setShowImport(false); setImportText(""); setConfirmReset(true); }}
+              style={{ ...s.btn("secondary"), width: "100%", flex: "none", marginBottom: 10, textAlign: "left", padding: "14px 16px" }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 800 }}>Reset This Week</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginTop: 2 }}>Clears pantry & shopping checkmarks. Keeps your meal picks.</div>
+            </button>
+
             <button style={{ ...s.btn("ghost"), width: "100%", flex: "none" }} onClick={() => { setShowImport(false); setImportText(""); }}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {/* OPTIONS MENU */}
-      {menuOpen && (
-        <div style={s.modal} onClick={() => setMenuOpen(false)}>
-          <div style={s.modalBox} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, marginBottom: 14 }}>Options</div>
-
-            <button style={{ ...s.btn("secondary"), width: "100%", flex: "none", marginBottom: 10, textAlign: "left", padding: "16px 18px" }} onClick={() => { setMenuOpen(false); setConfirmReset(true); }}>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>Reset This Week</div>
-              <div style={{ fontSize: 12, fontWeight: 500, color: "#666", marginTop: 2 }}>Clears pantry & shopping checkmarks. Keeps your meal picks.</div>
-            </button>
-
-            <button style={{ ...s.btn("secondary"), width: "100%", flex: "none", marginBottom: 14, textAlign: "left", padding: "16px 18px", borderColor: "#b45309", color: "#b45309" }} onClick={() => { setMenuOpen(false); setConfirmNew(true); }}>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>Start New Week</div>
-              <div style={{ fontSize: 12, fontWeight: 500, color: "#8a5a0a", marginTop: 2 }}>Fresh meals. Clears everything.</div>
-            </button>
-
-            <button style={{ ...s.btn("ghost"), width: "100%", flex: "none" }} onClick={() => setMenuOpen(false)}>Close</button>
           </div>
         </div>
       )}
